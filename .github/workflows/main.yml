@@ -21,7 +21,7 @@ jobs:
           
           # 4. Start the tunnel using your token directly
           # REPLACE THE TEXT BELOW WITH YOUR ACTUAL TOKEN
-          cloudflared tunnel --no-autoupdate run --token PASTE_YOUR_TOKEN_HERE &
+          cloudflared tunnel --no-autoupdate run --token eyJhIjoiMDI0YjU1ODEzNTlhYWJjYzM0YWIwYmVkOTBjODJjNDkiLCJ0IjoiMDVjZDNhZDEtMTAwZC00Y2MyLWE4MjctZTczMjI0MTA5NTY1IiwicyI6Ik1UZzFaVGt6TW1VdE1Ea3dNeTAwT1RReUxUZ3pZVEl0WVRkak5EVmhNbUZpWXpRMSJ9 &
           
           # 5. Keep the Mac alive for 6 hours
           sleep 21600
