@@ -1,27 +1,30 @@
-name: Mac-Tailscale-Remote
+name: Mac-Tailscale-Final
 on: workflow_dispatch
 
 jobs:
   run-mac:
     runs-on: macos-latest
     steps:
-      - name: Start VNC Server and Force Password
+      - name: Setup VNC and Force Password
         run: |
-          # 1. Start the Mac's Screen Sharing service
+          # 1. Start Remote Management
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -activate -configure -access -on -restart -agent -privs -all
           
-          # 2. FORCE change password using root (This avoids the "old password" error)
-          # We use 'sudo passwd' for the specific user to bypass auth checks.
-          echo "Password123" | sudo passwd runner
+          # 2. THE FIX: Use sysadminctl to force the password without an 'old password' check
+          sudo sysadminctl -adminUser runner -adminPassword "" -password "Password123" -addUser runner2
+          sudo sysadminctl -adminUser runner -adminPassword "" -password "Password123" -resetPasswordFor runner
 
-      - name: Connect Tailscale
+      - name: Install Tailscale via Homebrew
         run: |
-          # Install and start Tailscale
-          curl -fsSL https://tailscale.com/install.sh | sh
+          # 3. Using Homebrew ensures 'tailscale' is added to your PATH immediately
+          brew install tailscale
           sudo tailscaled --tun=userspace-networking &
+          sleep 5 # Give the daemon a second to breathe
           
-          # Replace the text below with your Tailscale key
+          # 4. Connect to your network
+          # REPLACE 'PASTE_YOUR_KEY' WITH YOUR ACTUAL KEY
           sudo tailscale up --authkey=tskey-auth-kRAAS3BZfX11CNTRL-5263jxJh5c551juEQv81c5ZXq6YxjgaL --hostname=github-mac
           
-          # Keep it running for 6 hours
+          # Keep it alive
+          echo "Mac is online. Connect via VNC to the IP shown in your Tailscale dashboard."
           sleep 21600
