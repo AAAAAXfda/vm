@@ -1,34 +1,39 @@
-name: Mac-Final-Success
+name: Mac-Final-Success-ARM64
 on: workflow_dispatch
 
 jobs:
   run-mac:
     runs-on: macos-latest
     steps:
-      - name: Setup VNC Password (The Secret Hack)
+      - name: Setup VNC and Password
         run: |
-          # 1. Start the Remote Management service
+          # 1. Start Remote Management
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -activate -configure -access -on -restart -agent -privs -all
           
-          # 2. Bypass "Screen recording" warnings by manual hashing
-          # This injects the password 'Password123' directly into the VNC settings file
-          echo "82A5E6928C97E8B3" | sudo tee /Library/Preferences/com.apple.VNCSettings.txt
-          
-          # 3. Force user password so you can log into the lock screen
-          echo "Password123" | sudo passwd -u runner
+          # 2. Set password 'Password123' for user 'runner'
+          # This sysadminctl command is the most reliable on macOS 15+
           sudo sysadminctl -adminUser runner -adminPassword "" -password "Password123" -resetPasswordFor runner
+          
+          # 3. Direct VNC password hashing hack
+          echo "82A5E6928C97E8B3" | sudo tee /Library/Preferences/com.apple.VNCSettings.txt
 
-      - name: Install & Run Tailscale
+      - name: Install & Run Tailscale (ARM64 Fixed)
         run: |
-          # 4. Install via Brew (the most reliable way for GitHub)
+          # 4. Install Tailscale
           brew install tailscale
           
-          # 5. Start the Tailscale background process
-          sudo /usr/local/bin/tailscaled --tun=userspace-networking &
+          # 5. Define the ARM64 path clearly
+          TS_BIN="/opt/homebrew/bin/tailscale"
+          TSD_BIN="/opt/homebrew/bin/tailscaled"
+          
+          # 6. Start the daemon
+          sudo $TSD_BIN --tun=userspace-networking &
           sleep 5
           
-          # 6. Use your provided key to connect
-          sudo /usr/local/bin/tailscale up --authkey=tskey-auth-kRAAS3BZfX11CNTRL-5263jxJh5c551juEQv81c5ZXq6YxjgaL --hostname=github-mac
+          # 7. Connect using your key
+          sudo $TS_BIN up --authkey=tskey-auth-kRAAS3BZfX11CNTRL-5263jxJh5c551juEQv81c5ZXq6YxjgaL --hostname=github-mac
           
-          echo "Connected! Look for 'github-mac' in your Tailscale dashboard."
+          echo "Connected! Device 'github-mac' should now be visible in your Tailscale dashboard."
+          
+          # Keep the session alive for 6 hours
           sleep 21600
