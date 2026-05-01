@@ -33,7 +33,7 @@ jobs:
           ./displaymode d
           
           # Set to 1280x800 (The most reliable 'small' resolution for lag reduction)
-          ./displaymode t 1280 800 || ./displaymode t 1024 768
+          ./displaymode t 1024 768 || ./displaymode t 1024 768
           echo "Resolution update attempted."
 
       - name: Install & Run Tailscale
