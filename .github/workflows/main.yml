@@ -29,16 +29,16 @@ jobs:
           # 4. Silence the observation banner
           sudo defaults write /Library/Preferences/com.apple.RemoteManagement.plist ShowScreenObservationBanner -bool false
 
-      - name: Set Resolution to 1366x768
+      - name: Set Resolution to 1280x720
         run: |
           # Download and compile a small tool to change resolution
           git clone https://github.com/p00ya/displaymode.git
           cd displaymode
           clang -std=c11 -lm -framework CoreFoundation -framework CoreGraphics -o displaymode displaymode.c
           
-          # Set resolution to 1366x768
-          ./displaymode t 1366 768
-          echo "Resolution set to 1366x768"
+          # Set resolution to 1280x720
+          ./displaymode t 1280 720
+          echo "Resolution set to 1280x720"
 
       - name: Install & Run Tailscale
         run: |
