@@ -1,35 +1,32 @@
-name: Mac-Sequoia-Fixed-V4
+name: Mac-Sequoia-Fix-V5
 on: workflow_dispatch
 
 jobs:
   run-mac:
     runs-on: macos-latest
     steps:
-      - name: Force User and VNC Bypass
+      - name: Setup Remote Management
         run: |
-          # 1. Create a fresh admin (Bypasses the -14090 error on 'runner')
+          # 1. Create a fresh admin (This worked in your logs)
           sudo sysadminctl -adminUser runner -adminPassword "" -addUser vncuser -fullName "VNC User" -password "Password123" -admin
           
-          # 2. Activate Remote Management (New Sequoia Syntax)
+          # 2. Enable Remote Management for ALL users with full privileges
+          # This is the modern, supported way to bypass the "Screen Recording" prompt
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -activate -configure -allowAccessFor -allUsers -privs -all
           
-          # 3. DIRECT HASH INJECTION (The Secret Sauce)
-          # This sets the VNC password to 'Password123' by writing to the binary plist
-          echo "82A5E6928C97E8B3" | sudo tee /Library/Preferences/com.apple.VNCSettings.txt
-          sudo defaults write /Library/Preferences/com.apple.RemoteManagement VNCAlwaysStartOnConsole -bool true
+          # 3. Enable the "VNC Legacy" mode so RealVNC can connect
+          # We use defaults write instead of kickstart flags that were removed
+          sudo defaults write /Library/Preferences/com.apple.RemoteManagement.plist VNCPassword -data $(echo "Password123" | perl -we 'print pack "H*", "82A5E6928C97E8B3"')
+          sudo defaults write /Library/Preferences/com.apple.RemoteManagement.plist VNCAlwaysStartOnConsole -bool true
           
-          # 4. Give 'Screensharing' permission to record the screen via TCC database
-          # This prevents the 'Black Screen of Death'
-          sudo sqlite3 /Library/Application\ Support/com.apple.TCC/TCC.db "REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.apple.RemoteDesktopAgent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,$(date +%s));"
-
-          # 5. Kick the agent to apply changes
+          # 4. Restart the agent to apply settings
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -restart -agent
 
-      - name: Setup Tailscale
+      - name: Start Tailscale
         run: |
           brew install tailscale
           sudo /opt/homebrew/bin/tailscaled --tun=userspace-networking &
           sleep 5
-          sudo /opt/homebrew/bin/tailscale up --authkey=tskey-auth-kRAAS3BZfX11CNTRL-5263jxJh5c551juEQv81c5ZXq6YxjgaL --hostname=github-mac
+          sudo /opt/homebrew/bin/tailscale up --authkey=YOUR_KEY_HERE --hostname=github-mac
           
-          while true; do echo "Active at $(date)"; sleep 60; done
+          while true; do echo "Keep-alive: $(date)"; sleep 60; done
