@@ -1,24 +1,27 @@
-name: MacRDP
-on: 
-  workflow_dispatch:
+name: Mac-Manual-Token-Remote
+on: workflow_dispatch
+
 jobs:
-  build:
-    name: MacRDP
+  launch-mac:
     runs-on: macos-latest
-    
-    steps:                 
-    - name: Enabling Remote Access
-      env:
-        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
-      run: |
-          curl -s -o start.sh -L "https://raw.githubusercontent.com/JohnnyNetsec/github-vm/main/mac/start.sh"
-          chmod +x start.sh
-          bash start.sh "$NGROK_AUTH_TOKEN"
+    steps:
+      - name: Setup VNC & Password
+        run: |
+          # 1. Start the Mac's Screen Sharing service
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -activate -configure -access -on -restart -agent -privs -all
           
-    - name: Log In Details To VNC Server
-      run: |
-         chmod +x login.sh
-         bash login.sh
-         
-    - name: MacOS System running...
-      uses: mxschmitt/action-tmate@v2
+          # 2. Set the password for the 'runner' user
+          # You will use 'Password123' to log in via VNC
+          sudo dscl . -passwd /Users/runner Password123
+
+      - name: Connect to Cloudflare
+        run: |
+          # 3. Install the Cloudflare tool
+          brew install cloudflared
+          
+          # 4. Start the tunnel using your token directly
+          # REPLACE THE TEXT BELOW WITH YOUR ACTUAL TOKEN
+          cloudflared tunnel --no-autoupdate run --token PASTE_YOUR_TOKEN_HERE &
+          
+          # 5. Keep the Mac alive for 6 hours
+          sleep 21600
