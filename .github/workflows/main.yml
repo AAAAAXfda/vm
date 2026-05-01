@@ -3,35 +3,35 @@ on: workflow_dispatch
 
 jobs:
   run-mac:
-    runs-on: macos-14  # Use macos-14/15/26 - the logic below is the current universal fix
+    runs-on: macos-26
     steps:
-      - name: Force GUI and Setup Remote Management
+      - name: Enable Remote Management for Default User
         run: |
-          # 1. Create a fresh admin user
-          sudo sysadminctl -addUser vncuser -fullName "VNC User" -password "Password123" -admin
-          
-          # 2. Critical: Kick the login window to wake up the GUI
-          # This often fixes the "black screen" issue by forcing the OS to draw the desktop
-          sudo killall -9 loginwindow || true
+          # 1. Skip creating a new user. Use the existing 'runner' user.
+          # We set a password for the 'runner' user so you can log in.
+          sudo dscl . -passwd /Users/runner Password123
 
-          # 3. Fix TCC Permissions for the Screen Sharing Agent (Tahoe Schema)
+          # 2. Grant TCC Permissions (macOS 26 Schema)
+          # Even for the default user, we must 'pre-approve' screen capture
           TIMESTAMP=$(date +%s)
           DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
           
-          # We must grant permissions specifically to the screensharing agent
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
 
-          # 4. Activate Screen Sharing (The "Control" way)
-          # We use -activate and -configure with specific flags to ensure control is allowed
+          # 3. Enable Screen Sharing (The only way that works in Tahoe)
+          # We use the -configure -access -on flags specifically for the 'runner' user
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate -configure -access -on \
+            -allowAccessFor -specifiedUsers \
+            -configure -users runner -access -on -privs -all \
             -clientopts -setvnclegacy -vnclegacy yes \
             -clientopts -setvncpw -vncpw Password123 \
-            -restart -agent -privs -all
+            -restart -agent
 
-          # 5. Prevent the observation banner from blocking the center of the screen
-          sudo defaults write /Library/Preferences/com.apple.RemoteManagement.plist ShowScreenObservationBanner -bool false
+          # 4. Force a UI refresh to fix the 'Black Screen'
+          # This restarts the compositor which is often stuck on M2/M3 runners
+          sudo killall -9 loginwindow || true
 
       - name: Install & Run Tailscale
         run: |
@@ -39,11 +39,9 @@ jobs:
           sudo /opt/homebrew/bin/tailscaled --tun=userspace-networking &
           sleep 5
           
-          # Connecting with your public key
           sudo /opt/homebrew/bin/tailscale up --authkey=tskey-auth-kRAAS3BZfX11CNTRL-5263jxJh5c551juEQv81c5ZXq6YxjgaL --hostname=github-mac-tahoe
           
           echo "VNC IP Address:"
           /opt/homebrew/bin/tailscale ip -4
           
-          # Keep alive loop
           while true; do echo "Status: Connected at $(date)"; sleep 60; done
