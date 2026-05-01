@@ -23,12 +23,6 @@ jobs:
 
           sudo defaults write /Library/Preferences/com.apple.RemoteManagement.plist ShowScreenObservationBanner -bool false
 
-      - name: Set Supported Resolution
-        run: |
-          git clone https://github.com/p00ya/displaymode.git
-          cd displaymode
-          clang -std=c11 -lm -framework CoreFoundation -framework CoreGraphics -o displaymode displaymode.c
-
       - name: Install & Run Tailscale
         run: |
           brew install tailscale
