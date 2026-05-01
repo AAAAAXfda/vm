@@ -5,32 +5,37 @@ jobs:
   run-mac:
     runs-on: macos-26
     steps:
-      - name: Enable Remote Management for Default User
+      - name: Setup Remote Management
         run: |
-          # 1. Skip creating a new user. Use the existing 'runner' user.
-          # We set a password for the 'runner' user so you can log in.
-          sudo dscl . -passwd /Users/runner Password123
+          # 1. Create user using dscl (bypasses sysadminctl interaction errors)
+          sudo dscl . -create /Users/vncuser
+          sudo dscl . -create /Users/vncuser UserShell /bin/zsh
+          sudo dscl . -create /Users/vncuser RealName "VNC User"
+          sudo dscl . -create /Users/vncuser UniqueID "502"
+          sudo dscl . -create /Users/vncuser PrimaryGroupID 20
+          sudo dscl . -create /Users/vncuser NFSHomeDirectory /Users/vncuser
+          sudo dscl . -passwd /Users/vncuser Password123
+          sudo dscl . -append /Groups/admin GroupMembership vncuser
+          sudo mkdir -p /Users/vncuser
+          sudo chown vncuser:staff /Users/vncuser
 
-          # 2. Grant TCC Permissions (macOS 26 Schema)
-          # Even for the default user, we must 'pre-approve' screen capture
+          # 2. Grant TCC Permissions (17-column Sonoma/Tahoe Schema)
           TIMESTAMP=$(date +%s)
           DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
           
+          # Use 'INSERT OR REPLACE' to ensure the agent has screen control
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
 
-          # 3. Enable Screen Sharing (The only way that works in Tahoe)
-          # We use the -configure -access -on flags specifically for the 'runner' user
+          # 3. Configure Kickstart with VNC Password
+          # This sets the 'Legacy' VNC password to Password123
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate -configure -access -on \
-            -allowAccessFor -specifiedUsers \
-            -configure -users runner -access -on -privs -all \
             -clientopts -setvnclegacy -vnclegacy yes \
             -clientopts -setvncpw -vncpw Password123 \
-            -restart -agent
+            -restart -agent -privs -all
 
-          # 4. Force a UI refresh to fix the 'Black Screen'
-          # This restarts the compositor which is often stuck on M2/M3 runners
+          # 4. Refresh GUI
           sudo killall -9 loginwindow || true
 
       - name: Install & Run Tailscale
