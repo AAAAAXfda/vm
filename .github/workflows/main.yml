@@ -1,30 +1,34 @@
-name: Mac-Tailscale-Final
+name: Mac-Final-Success
 on: workflow_dispatch
 
 jobs:
   run-mac:
     runs-on: macos-latest
     steps:
-      - name: Setup VNC and Force Password
+      - name: Setup VNC Password (The Secret Hack)
         run: |
-          # 1. Start Remote Management
+          # 1. Start the Remote Management service
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -activate -configure -access -on -restart -agent -privs -all
           
-          # 2. THE FIX: Use sysadminctl to force the password without an 'old password' check
-          sudo sysadminctl -adminUser runner -adminPassword "" -password "Password123" -addUser runner2
+          # 2. Bypass "Screen recording" warnings by manual hashing
+          # This injects the password 'Password123' directly into the VNC settings file
+          echo "82A5E6928C97E8B3" | sudo tee /Library/Preferences/com.apple.VNCSettings.txt
+          
+          # 3. Force user password so you can log into the lock screen
+          echo "Password123" | sudo passwd -u runner
           sudo sysadminctl -adminUser runner -adminPassword "" -password "Password123" -resetPasswordFor runner
 
-      - name: Install Tailscale via Homebrew
+      - name: Install & Run Tailscale
         run: |
-          # 3. Using Homebrew ensures 'tailscale' is added to your PATH immediately
+          # 4. Install via Brew (the most reliable way for GitHub)
           brew install tailscale
-          sudo tailscaled --tun=userspace-networking &
-          sleep 5 # Give the daemon a second to breathe
           
-          # 4. Connect to your network
-          # REPLACE 'PASTE_YOUR_KEY' WITH YOUR ACTUAL KEY
-          sudo tailscale up --authkey=tskey-auth-kRAAS3BZfX11CNTRL-5263jxJh5c551juEQv81c5ZXq6YxjgaL --hostname=github-mac
+          # 5. Start the Tailscale background process
+          sudo /usr/local/bin/tailscaled --tun=userspace-networking &
+          sleep 5
           
-          # Keep it alive
-          echo "Mac is online. Connect via VNC to the IP shown in your Tailscale dashboard."
+          # 6. Use your provided key to connect
+          sudo /usr/local/bin/tailscale up --authkey=tskey-auth-kRAAS3BZfX11CNTRL-5263jxJh5c551juEQv81c5ZXq6YxjgaL --hostname=github-mac
+          
+          echo "Connected! Look for 'github-mac' in your Tailscale dashboard."
           sleep 21600
