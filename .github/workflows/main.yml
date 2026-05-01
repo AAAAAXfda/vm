@@ -3,50 +3,44 @@ on: workflow_dispatch
 
 jobs:
   run-mac:
+    # Updated to the 2026 macOS runner (Tahoe)
     runs-on: macos-26
     steps:
-      - name: Setup Remote Management
+      - name: Setup Remote Management & Fix TCC
         run: |
-          # 1. Create user using dscl (bypasses sysadminctl interaction errors)
-          sudo dscl . -create /Users/vncuser
-          sudo dscl . -create /Users/vncuser UserShell /bin/zsh
-          sudo dscl . -create /Users/vncuser RealName "VNC User"
-          sudo dscl . -create /Users/vncuser UniqueID "502"
-          sudo dscl . -create /Users/vncuser PrimaryGroupID 20
-          sudo dscl . -create /Users/vncuser NFSHomeDirectory /Users/vncuser
-          sudo dscl . -passwd /Users/vncuser Password123
-          sudo dscl . -append /Groups/admin GroupMembership vncuser
-          sudo mkdir -p /Users/vncuser
-          sudo chown vncuser:staff /Users/vncuser
-
-          # 2. Grant TCC Permissions (17-column Sonoma/Tahoe Schema)
+          # Create the VNC user
+          sudo sysadminctl -addUser vncuser -fullName "VNC User" -password "Password123" -admin
+          
           TIMESTAMP=$(date +%s)
           DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
           
-          # Use 'INSERT OR REPLACE' to ensure the agent has screen control
+          # Inject permissions for Screen Sharing and Accessibility
+          # These paths remain the standard for macOS 26 agents
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
 
-          # 3. Configure Kickstart with VNC Password
-          # This sets the 'Legacy' VNC password to Password123
+          # Enable Remote Management via kickstart
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate -configure -access -on \
             -clientopts -setvnclegacy -vnclegacy yes \
             -clientopts -setvncpw -vncpw Password123 \
             -restart -agent -privs -all
 
-          # 4. Refresh GUI
-          sudo killall -9 loginwindow || true
+          # Remove the 'Screen Observation' banner for a cleaner experience
+          sudo defaults write /Library/Preferences/com.apple.RemoteManagement.plist ShowScreenObservationBanner -bool false
 
       - name: Install & Run Tailscale
         run: |
           brew install tailscale
+          # Start the tailscaled daemon in userspace mode
           sudo /opt/homebrew/bin/tailscaled --tun=userspace-networking &
           sleep 5
           
+          # Using your provided plain-text key
           sudo /opt/homebrew/bin/tailscale up --authkey=tskey-auth-kRAAS3BZfX11CNTRL-5263jxJh5c551juEQv81c5ZXq6YxjgaL --hostname=github-mac-tahoe
           
-          echo "VNC IP Address:"
+          # Output the IP to the logs so you know where to connect
           /opt/homebrew/bin/tailscale ip -4
           
+          # Keep-alive loop to prevent the runner from closing
           while true; do echo "Status: Connected at $(date)"; sleep 60; done
