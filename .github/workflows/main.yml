@@ -32,6 +32,9 @@ jobs:
             -clientopts -setvncpw -vncpw Password123 \
             -restart -agent -privs -all
 
+          # Set display resolution
+          sudo display-switch -res 1024 768
+
           # 4. Hide the Sonoma 'Screen Sharing' banner to prevent UI blocking
           sudo defaults write /Library/Preferences/com.apple.RemoteManagement.plist ShowScreenObservationBanner -bool false
 
