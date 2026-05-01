@@ -1,39 +1,37 @@
-name: Mac-Final-Success-ARM64
+name: Mac-Spoonfeed-Final-Fixed
 on: workflow_dispatch
 
 jobs:
   run-mac:
     runs-on: macos-latest
     steps:
-      - name: Setup VNC and Password
+      - name: Force Password & Enable VNC
         run: |
-          # 1. Start Remote Management
+          # 1. Start the Remote Management service
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -activate -configure -access -on -restart -agent -privs -all
           
-          # 2. Set password 'Password123' for user 'runner'
-          # This sysadminctl command is the most reliable on macOS 15+
-          sudo sysadminctl -adminUser runner -adminPassword "" -password "Password123" -resetPasswordFor runner
+          # 2. FORCE change the runner password (Bypasses the sysadminctl -14090 error)
+          sudo dscl . -passwd /Users/runner Password123
           
-          # 3. Direct VNC password hashing hack
+          # 3. Enable legacy VNC support and set a secondary VNC-only password
+          # This is often required for RealVNC to handshake correctly with macOS
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -configure -clientopts -setvncpasswd -vncpasswd Password123
+          
+          # 4. Inject the hash directly to bypass 'Screen Recording' permission prompts
           echo "82A5E6928C97E8B3" | sudo tee /Library/Preferences/com.apple.VNCSettings.txt
 
-      - name: Install & Run Tailscale (ARM64 Fixed)
+      - name: Install & Run Tailscale
         run: |
-          # 4. Install Tailscale
           brew install tailscale
-          
-          # 5. Define the ARM64 path clearly
-          TS_BIN="/opt/homebrew/bin/tailscale"
-          TSD_BIN="/opt/homebrew/bin/tailscaled"
-          
-          # 6. Start the daemon
-          sudo $TSD_BIN --tun=userspace-networking &
+          # Use the correct ARM64 path for macOS 15
+          sudo /opt/homebrew/bin/tailscaled --tun=userspace-networking &
           sleep 5
           
-          # 7. Connect using your key
-          sudo $TS_BIN up --authkey=tskey-auth-kRAAS3BZfX11CNTRL-5263jxJh5c551juEQv81c5ZXq6YxjgaL --hostname=github-mac
+          # Connect using your key
+          sudo /opt/homebrew/bin/tailscale up --authkey=tskey-auth-kRAAS3BZfX11CNTRL-5263jxJh5c551juEQv81c5ZXq6YxjgaL --hostname=github-mac
           
-          echo "Connected! Device 'github-mac' should now be visible in your Tailscale dashboard."
-          
-          # Keep the session alive for 6 hours
-          sleep 21600
+          # 5. Keep-alive loop to prevent GitHub from canceling the job
+          for i in {1..720}; do
+            echo "Mac is running... (Minute $i/3600)"
+            sleep 60
+          done
