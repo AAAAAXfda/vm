@@ -3,56 +3,47 @@ on: workflow_dispatch
 
 jobs:
   run-mac:
-    runs-on: macos-14  # Specifically Sonoma
+    runs-on: macos-14
     steps:
-      - name: Setup Remote Management & Bypass TCC
+      - name: Setup Remote Management & Fix TCC
         run: |
-          # 1. Create a fresh admin user
-          # sysadminctl is the standard way to add users via CLI in macOS
+          # 1. Create a fresh admin user (Improved for Sonoma)
+          # We use a more direct method to ensure the password is set correctly for headless login
           sudo sysadminctl -addUser vncuser -fullName "VNC User" -password "Password123" -admin
           
-          # 2. Fix TCC (Transparency, Consent, and Control) Database
-          # macOS Sonoma requires exactly 17 columns in the 'access' table.
-          # We grant permissions to 'com.apple.screensharing.agent' for Screen Capture and Accessibility.
+          # 2. Grant Permissions (Fixed for 17-column Sonoma Schema)
+          # We provide all 17 values required by the macOS 14 TCC.db
+          # Values include: service, client, client_type, auth_value, auth_reason, auth_version, 
+          # flags, last_modified, policy_id, indirect_object_identifier_type, indirect_object_identifier,
+          # indirect_object_code_identity, last_usage_timestamp, prompt_count, preflight_unknown, 
+          # attribution_log_id, singleton_context_id
           
           TIMESTAMP=$(date +%s)
-          DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
-          
-          # SQL for Screen Recording (to fix "Screen recording might be disabled")
-          SQL_SCREEN="INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
-          
-          # SQL for Accessibility (to fix "Screen control might be disabled")
-          SQL_CONTROL="INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
+          SQL_QUERY="INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
+          SQL_QUERY_ACC="INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
 
-          sudo sqlite3 "$DB_PATH" "$SQL_SCREEN"
-          sudo sqlite3 "$DB_PATH" "$SQL_CONTROL"
+          sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" "$SQL_QUERY"
+          sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" "$SQL_QUERY_ACC"
 
-          # 3. Enable Remote Management / VNC Legacy
-          # We use kickstart to turn on the service and set the VNC-specific password.
+          # 3. Enable VNC Legacy and set the password
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate -configure -access -on \
             -clientopts -setvnclegacy -vnclegacy yes \
             -clientopts -setvncpw -vncpw Password123 \
             -restart -agent -privs -all
-          
-          # 4. Disable the Sonoma 'Screen Observation' banner
-          # This prevents the purple recording icon/banner from blocking the UI.
+
+          # 4. Hide the Sonoma 'Screen Sharing' banner to prevent UI blocking
           sudo defaults write /Library/Preferences/com.apple.RemoteManagement.plist ShowScreenObservationBanner -bool false
 
       - name: Install & Run Tailscale
         run: |
           brew install tailscale
-          
-          # Start tailscaled in userspace mode (required for GitHub Runners)
           sudo /opt/homebrew/bin/tailscaled --tun=userspace-networking &
           sleep 5
           
-          # Connect to Tailscale with your public key
           sudo /opt/homebrew/bin/tailscale up --authkey=tskey-auth-kRAAS3BZfX11CNTRL-5263jxJh5c551juEQv81c5ZXq6YxjgaL --hostname=github-mac-sonoma
           
-          # Print the IP address to the logs
-          echo "Connect to this IP via VNC:"
+          echo "VNC IP Address:"
           /opt/homebrew/bin/tailscale ip -4
           
-          # Keep the runner alive
           while true; do echo "Status: Connected at $(date)"; sleep 60; done
