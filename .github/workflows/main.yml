@@ -7,36 +7,38 @@ jobs:
     steps:
       - name: Setup Remote Management & Fix TCC
         run: |
-          # 1. Create a fresh admin user (Improved for Sonoma)
-          # We use a more direct method to ensure the password is set correctly for headless login
+          # 1. Create a fresh admin user
           sudo sysadminctl -addUser vncuser -fullName "VNC User" -password "Password123" -admin
           
-          # 2. Grant Permissions (Fixed for 17-column Sonoma Schema)
-          # We provide all 17 values required by the macOS 14 TCC.db
-          # Values include: service, client, client_type, auth_value, auth_reason, auth_version, 
-          # flags, last_modified, policy_id, indirect_object_identifier_type, indirect_object_identifier,
-          # indirect_object_code_identity, last_usage_timestamp, prompt_count, preflight_unknown, 
-          # attribution_log_id, singleton_context_id
-          
+          # 2. Grant Permissions (Sonoma 17-column Schema)
           TIMESTAMP=$(date +%s)
+          DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
           SQL_QUERY="INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
           SQL_QUERY_ACC="INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
 
-          sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" "$SQL_QUERY"
-          sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" "$SQL_QUERY_ACC"
+          sudo sqlite3 "$DB_PATH" "$SQL_QUERY"
+          sudo sqlite3 "$DB_PATH" "$SQL_QUERY_ACC"
 
-          # 3. Enable VNC Legacy and set the password
+          # 3. Enable VNC Legacy
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate -configure -access -on \
             -clientopts -setvnclegacy -vnclegacy yes \
             -clientopts -setvncpw -vncpw Password123 \
             -restart -agent -privs -all
 
-          # Set display resolution
-          sudo display-switch -res 1024 768
-
-          # 4. Hide the Sonoma 'Screen Sharing' banner to prevent UI blocking
+          # 4. Silence the observation banner
           sudo defaults write /Library/Preferences/com.apple.RemoteManagement.plist ShowScreenObservationBanner -bool false
+
+      - name: Set Resolution to 1366x768
+        run: |
+          # Download and compile a small tool to change resolution
+          git clone https://github.com/p00ya/displaymode.git
+          cd displaymode
+          clang -std=c11 -lm -framework CoreFoundation -framework CoreGraphics -o displaymode displaymode.c
+          
+          # Set resolution to 1366x768
+          ./displaymode t 1366 768
+          echo "Resolution set to 1366x768"
 
       - name: Install & Run Tailscale
         run: |
@@ -44,6 +46,7 @@ jobs:
           sudo /opt/homebrew/bin/tailscaled --tun=userspace-networking &
           sleep 5
           
+          # Using your public key as requested
           sudo /opt/homebrew/bin/tailscale up --authkey=tskey-auth-kRAAS3BZfX11CNTRL-5263jxJh5c551juEQv81c5ZXq6YxjgaL --hostname=github-mac-sonoma
           
           echo "VNC IP Address:"
