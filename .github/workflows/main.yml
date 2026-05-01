@@ -1,49 +1,29 @@
-name: Mac-Sonoma-VNC-2026
-on: workflow_dispatch
-
-jobs:
-  run-mac:
-    runs-on: macos-14
-    steps:
-      - name: Setup Remote Management & Fix TCC
+- name: Fix TCC and Enable Remote Management
         run: |
-          # 1. Create a fresh admin user (Improved for Sonoma)
-          # We use a more direct method to ensure the password is set correctly for headless login
+          # 1. Create the user
           sudo sysadminctl -addUser vncuser -fullName "VNC User" -password "Password123" -admin
           
-          # 2. Grant Permissions (Fixed for 17-column Sonoma Schema)
-          # We provide all 17 values required by the macOS 14 TCC.db
-          # Values include: service, client, client_type, auth_value, auth_reason, auth_version, 
-          # flags, last_modified, policy_id, indirect_object_identifier_type, indirect_object_identifier,
+          # 2. Inject Screen Recording & Accessibility permissions (17-column schema)
+          # Format: service, client, client_type, auth_value, auth_reason, auth_version, flags, 
+          # last_modified, policy_id, indirect_object_identifier_type, indirect_object_identifier, 
           # indirect_object_code_identity, last_usage_timestamp, prompt_count, preflight_unknown, 
           # attribution_log_id, singleton_context_id
           
           TIMESTAMP=$(date +%s)
-          SQL_QUERY="INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
-          SQL_QUERY_ACC="INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
+          DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
+          
+          # Grant Screen Recording to the Screen Sharing Agent
+          sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
+          
+          # Grant Accessibility to the Screen Sharing Agent (required for mouse/keyboard control)
+          sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
 
-          sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" "$SQL_QUERY"
-          sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" "$SQL_QUERY_ACC"
-
-          # 3. Enable VNC Legacy and set the password
+          # 3. Enable Screen Sharing service
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate -configure -access -on \
             -clientopts -setvnclegacy -vnclegacy yes \
             -clientopts -setvncpw -vncpw Password123 \
             -restart -agent -privs -all
-
-          # 4. Hide the Sonoma 'Screen Sharing' banner to prevent UI blocking
+          
+          # 4. Silence the Sonoma "Screen is being observed" alert
           sudo defaults write /Library/Preferences/com.apple.RemoteManagement.plist ShowScreenObservationBanner -bool false
-
-      - name: Install & Run Tailscale
-        run: |
-          brew install tailscale
-          sudo /opt/homebrew/bin/tailscaled --tun=userspace-networking &
-          sleep 5
-          
-          sudo /opt/homebrew/bin/tailscale up --authkey=tskey-auth-kRAAS3BZfX11CNTRL-5263jxJh5c551juEQv81c5ZXq6YxjgaL --hostname=github-mac-sonoma
-          
-          echo "VNC IP Address:"
-          /opt/homebrew/bin/tailscale ip -4
-          
-          while true; do echo "Status: Connected at $(date)"; sleep 60; done
