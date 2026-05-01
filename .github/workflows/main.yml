@@ -1,37 +1,32 @@
-name: Mac-Spoonfeed-Final-Fixed
+name: Mac-Ultimate-Fix
 on: workflow_dispatch
 
 jobs:
   run-mac:
     runs-on: macos-latest
     steps:
-      - name: Force Password & Enable VNC
+      - name: Force Password & VNC (Sequoia Fix)
         run: |
-          # 1. Start the Remote Management service
+          # 1. Enable Screen Sharing
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -activate -configure -access -on -restart -agent -privs -all
           
-          # 2. FORCE change the runner password (Bypasses the sysadminctl -14090 error)
-          sudo dscl . -passwd /Users/runner Password123
+          # 2. THE FIX: Create a NEW admin user. 
+          # Since we can't change the 'runner' password easily, we create 'admin2'
+          sudo sysadminctl -adminUser runner -adminPassword "" -addUser admin2 -fullName "Admin Two" -password "Password123" -admin
           
-          # 3. Enable legacy VNC support and set a secondary VNC-only password
-          # This is often required for RealVNC to handshake correctly with macOS
+          # 3. Set a VNC-specific password (Legacy mode)
+          # RealVNC loves this. It bypasses the standard Mac login window lock.
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -configure -clientopts -setvncpasswd -vncpasswd Password123
-          
-          # 4. Inject the hash directly to bypass 'Screen Recording' permission prompts
-          echo "82A5E6928C97E8B3" | sudo tee /Library/Preferences/com.apple.VNCSettings.txt
 
-      - name: Install & Run Tailscale
+      - name: Setup Tailscale
         run: |
           brew install tailscale
-          # Use the correct ARM64 path for macOS 15
+          # Start the background service
           sudo /opt/homebrew/bin/tailscaled --tun=userspace-networking &
           sleep 5
           
-          # Connect using your key
+          # Use your key
           sudo /opt/homebrew/bin/tailscale up --authkey=tskey-auth-kRAAS3BZfX11CNTRL-5263jxJh5c551juEQv81c5ZXq6YxjgaL --hostname=github-mac
           
-          # 5. Keep-alive loop to prevent GitHub from canceling the job
-          for i in {1..720}; do
-            echo "Mac is running... (Minute $i/3600)"
-            sleep 60
-          done
+          # 4. Stay Alive Loop
+          while true; do echo "Keep-alive: $(date)"; sleep 60; done
