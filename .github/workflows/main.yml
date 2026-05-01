@@ -3,34 +3,34 @@ on: workflow_dispatch
 
 jobs:
   run-mac:
-    runs-on: macos-26
+    runs-on: macos-14  # Use macos-14/15/26 - the logic below is the current universal fix
     steps:
-      - name: Setup Remote Management & UI Initialization
+      - name: Force GUI and Setup Remote Management
         run: |
-          # 1. Create the user
+          # 1. Create a fresh admin user
           sudo sysadminctl -addUser vncuser -fullName "VNC User" -password "Password123" -admin
           
-          # 2. Inject TCC Permissions (17-column macOS 26 Schema)
+          # 2. Critical: Kick the login window to wake up the GUI
+          # This often fixes the "black screen" issue by forcing the OS to draw the desktop
+          sudo killall -9 loginwindow || true
+
+          # 3. Fix TCC Permissions for the Screen Sharing Agent (Tahoe Schema)
           TIMESTAMP=$(date +%s)
           DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
+          
+          # We must grant permissions specifically to the screensharing agent
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
 
-          # 3. Enable VNC service
+          # 4. Activate Screen Sharing (The "Control" way)
+          # We use -activate and -configure with specific flags to ensure control is allowed
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate -configure -access -on \
             -clientopts -setvnclegacy -vnclegacy yes \
             -clientopts -setvncpw -vncpw Password123 \
             -restart -agent -privs -all
 
-          # 4. THE BLACK SCREEN FIX: Force UI to start
-          # We kill the loginwindow; macOS will immediately restart it and generate a virtual display.
-          sudo killall loginwindow
-          
-          # Reset the sharing daemon to make sure it's fresh
-          sudo pkill screensharingd
-          
-          # Hide the Sonoma/Tahoe banner
+          # 5. Prevent the observation banner from blocking the center of the screen
           sudo defaults write /Library/Preferences/com.apple.RemoteManagement.plist ShowScreenObservationBanner -bool false
 
       - name: Install & Run Tailscale
@@ -38,10 +38,12 @@ jobs:
           brew install tailscale
           sudo /opt/homebrew/bin/tailscaled --tun=userspace-networking &
           sleep 5
+          
+          # Connecting with your public key
           sudo /opt/homebrew/bin/tailscale up --authkey=tskey-auth-kRAAS3BZfX11CNTRL-5263jxJh5c551juEQv81c5ZXq6YxjgaL --hostname=github-mac-tahoe
           
           echo "VNC IP Address:"
           /opt/homebrew/bin/tailscale ip -4
           
-          # Output status to keep runner alive
+          # Keep alive loop
           while true; do echo "Status: Connected at $(date)"; sleep 60; done
