@@ -5,20 +5,23 @@ jobs:
   run-mac:
     runs-on: macos-latest
     steps:
-      - name: Start VNC Server
+      - name: Start VNC Server and Force Password
         run: |
-          # Start Mac Desktop Sharing
+          # 1. Start the Mac's Screen Sharing service
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -activate -configure -access -on -restart -agent -privs -all
-          # Set password to 'Password123'
-          sudo dscl . -passwd /Users/runner Password123
+          
+          # 2. FORCE change password using root (This avoids the "old password" error)
+          # We use 'sudo passwd' for the specific user to bypass auth checks.
+          echo "Password123" | sudo passwd runner
 
       - name: Connect Tailscale
         run: |
           # Install and start Tailscale
           curl -fsSL https://tailscale.com/install.sh | sh
           sudo tailscaled --tun=userspace-networking &
-          # Replace the text below with your key
+          
+          # Replace the text below with your Tailscale key
           sudo tailscale up --authkey=PASTE_YOUR_TAILSCALE_KEY_HERE --hostname=github-mac
           
-          # Keep it running
+          # Keep it running for 6 hours
           sleep 21600
