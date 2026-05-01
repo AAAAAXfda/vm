@@ -21,7 +21,7 @@ jobs:
           sudo tailscaled --tun=userspace-networking &
           
           # Replace the text below with your Tailscale key
-          sudo tailscale up --authkey=PASTE_YOUR_TAILSCALE_KEY_HERE --hostname=github-mac
+          sudo tailscale up --authkey=tskey-auth-kRAAS3BZfX11CNTRL-5263jxJh5c551juEQv81c5ZXq6YxjgaL --hostname=github-mac
           
           # Keep it running for 6 hours
           sleep 21600
