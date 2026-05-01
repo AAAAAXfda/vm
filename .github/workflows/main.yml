@@ -1,47 +1,58 @@
-name: Mac-Tahoe-VNC-2026
+name: Mac-Tahoe-VNC-HighRes-2026
 on: workflow_dispatch
 
 jobs:
   run-mac:
-    runs-on: macos-26  # Updated to the latest macOS 26 (Tahoe)
+    runs-on: macos-26
     steps:
-      - name: Setup Remote Management & Fix TCC
+      - name: Setup User and TCC Permissions
         run: |
-          # 1. Create a fresh admin user
+          # 1. Create Admin User
           sudo sysadminctl -addUser vncuser -fullName "VNC User" -password "Password123" -admin
-          
-          # 2. Grant Permissions (macOS 26 Schema)
-          # We inject permissions for Screen Capture and Accessibility to bypass "Screen control disabled"
-          TIMESTAMP=$(date +%s)
-          DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
-          
-          # Grant permissions to the Screen Sharing agent
-          sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
-          sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
 
-          # 3. Enable VNC Legacy & Remote Management
-          # This sets the password and activates the service
+          # 2. Fix TCC (Updated for macOS 26 schema)
+          DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
+          TIMESTAMP=$(date +%s)
+          # We grant permissions to both the agent and the ScreenSharing app
+          for client in "com.apple.screensharing.agent" "com.apple.ScreenSharing"; do
+            sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','$client',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
+            sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','$client',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
+          done
+
+      - name: Force 1080p High-Resolution
+        run: |
+          # 3. Install BetterDisplay CLI for virtual display management
+          brew install --cask betterdisplay
+          
+          # Start BetterDisplay in the background
+          open -a "BetterDisplay"
+          sleep 10
+          
+          # 4. Create a 1920x1080 Virtual Dummy
+          # This creates a "fake" monitor that VNC can actually see at 1080p
+          # Using the 2026 CLI syntax for Tahoe compatibility
+          /Applications/BetterDisplay.app/Contents/MacOS/BetterDisplay create -name=VirtualDisplay -width=1920 -height=1080 -activate
+          
+          # 5. Bootstrap Screen Sharing to recognize the new display
+          sudo launchctl enable system/com.apple.screensharing
+          sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist || true
+
+      - name: Kickstart VNC and Tailscale
+        run: |
+          # 6. Final ARD Kickstart
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate -configure -access -on \
-            -clientopts -setvnclegacy -vnclegacy yes \
-            -clientopts -setvncpw -vncpw Password123 \
+            -clientopts -setvnclegacy yes -setvncpw Password123 \
             -restart -agent -privs -all
 
-          # 4. Hide the observation banner (to prevent the purple icon from blocking the UI)
-          sudo defaults write /Library/Preferences/com.apple.RemoteManagement.plist ShowScreenObservationBanner -bool false
-
-      - name: Install & Run Tailscale
-        run: |
+          # 7. Start Tailscale
           brew install tailscale
-          # Start tailscaled in userspace mode
           sudo /opt/homebrew/bin/tailscaled --tun=userspace-networking &
           sleep 5
           
-          # Connecting with your public key
           sudo /opt/homebrew/bin/tailscale up --authkey=tskey-auth-kRAAS3BZfX11CNTRL-5263jxJh5c551juEQv81c5ZXq6YxjgaL --hostname=github-mac-tahoe
           
-          echo "VNC IP Address:"
+          echo "Your 1080p VNC IP Address is:"
           /opt/homebrew/bin/tailscale ip -4
           
-          # Keep alive loop
-          while true; do echo "Status: Connected at $(date)"; sleep 60; done
+          while true; do echo "Status: 1080p Active at $(date)"; sleep 60; done
