@@ -1,4 +1,4 @@
-name: Mac-Remote-Connect
+name: Mac-Tailscale-Remote
 on: workflow_dispatch
 
 jobs:
@@ -7,14 +7,18 @@ jobs:
     steps:
       - name: Start VNC Server
         run: |
-          # Start the Mac desktop sharing service
+          # Start Mac Desktop Sharing
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -activate -configure -access -on -restart -agent -privs -all
-          # Set the password to 'Password123'
+          # Set password to 'Password123'
           sudo dscl . -passwd /Users/runner Password123
 
-      - name: Connect Tunnel
+      - name: Connect Tailscale
         run: |
-          brew install cloudflared
-          # Replace the text below with your actual token
-          cloudflared tunnel --no-autoupdate run --token eyJhIjoiMDI0YjU1ODEzNTlhYWJjYzM0YWIwYmVkOTBjODJjNDkiLCJ0IjoiMDVjZDNhZDEtMTAwZC00Y2MyLWE4MjctZTczMjI0MTA5NTY1IiwicyI6Ik1UZzFaVGt6TW1VdE1Ea3dNeTAwT1RReUxUZ3pZVEl0WVRkak5EVmhNbUZpWXpRMSJ9 &
+          # Install and start Tailscale
+          curl -fsSL https://tailscale.com/install.sh | sh
+          sudo tailscaled --tun=userspace-networking &
+          # Replace the text below with your key
+          sudo tailscale up --authkey=PASTE_YOUR_TAILSCALE_KEY_HERE --hostname=github-mac
+          
+          # Keep it running
           sleep 21600
