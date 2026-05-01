@@ -1,27 +1,20 @@
-name: Mac-Manual-Token-Remote
+name: Mac-Remote-Connect
 on: workflow_dispatch
 
 jobs:
-  launch-mac:
+  run-mac:
     runs-on: macos-latest
     steps:
-      - name: Setup VNC & Password
+      - name: Start VNC Server
         run: |
-          # 1. Start the Mac's Screen Sharing service
+          # Start the Mac desktop sharing service
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -activate -configure -access -on -restart -agent -privs -all
-          
-          # 2. Set the password for the 'runner' user
-          # You will use 'Password123' to log in via VNC
+          # Set the password to 'Password123'
           sudo dscl . -passwd /Users/runner Password123
 
-      - name: Connect to Cloudflare
+      - name: Connect Tunnel
         run: |
-          # 3. Install the Cloudflare tool
           brew install cloudflared
-          
-          # 4. Start the tunnel using your token directly
-          # REPLACE THE TEXT BELOW WITH YOUR ACTUAL TOKEN
+          # Replace the text below with your actual token
           cloudflared tunnel --no-autoupdate run --token eyJhIjoiMDI0YjU1ODEzNTlhYWJjYzM0YWIwYmVkOTBjODJjNDkiLCJ0IjoiMDVjZDNhZDEtMTAwZC00Y2MyLWE4MjctZTczMjI0MTA5NTY1IiwicyI6Ik1UZzFaVGt6TW1VdE1Ea3dNeTAwT1RReUxUZ3pZVEl0WVRkak5EVmhNbUZpWXpRMSJ9 &
-          
-          # 5. Keep the Mac alive for 6 hours
           sleep 21600
