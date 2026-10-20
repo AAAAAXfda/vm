@@ -5,32 +5,48 @@ jobs:
   run-mac:
     runs-on: macos-latest
     steps:
+      - name: Kill UI Bloat (Massive Latency Reduction)
+        run: |
+          # Kill eye candy so software rendering doesn't eat the CPU
+          defaults write com.apple.universalaccess reduceTransparency -bool true
+          defaults write NSGlobalDomain NSAutomaticWindowAnimationsEnabled -bool false
+          defaults write com.apple.finder DisableAllAnimations -bool true
+          defaults write -g QLPanelAnimationDuration -float 0
+          defaults write com.apple.dock launchanim -bool false
+
       - name: Setup Remote Management & Fix TCC
         run: |
+          # Create admin user
           sudo sysadminctl -addUser vncuser -fullName "VNC User" -password "Password123" -admin
           
           TIMESTAMP=$(date +%s)
           DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
-          # Granting permissions to the specific Sonoma agents
+          
+          # Fix Sonoma TCC permissions
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
 
+          # NOTE: If you are connecting from a Mac, LEAVE LEGACY OFF.
+          # If you MUST use a Windows client like TigerVNC, change -setvnclegacy to yes.
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate -configure -access -on \
-            -clientopts -setvnclegacy -vnclegacy yes \
-            -clientopts -setvncpw -vncpw Password123 \
+            -clientopts -setvnclegacy -vnclegacy no \
             -restart -agent -privs -all
 
           sudo defaults write /Library/Preferences/com.apple.RemoteManagement.plist ShowScreenObservationBanner -bool false
 
       - name: Install & Run Tailscale
+        env:
+          TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
         run: |
           brew install tailscale
           sudo /opt/homebrew/bin/tailscaled --tun=userspace-networking &
           sleep 5
           
-          sudo /opt/homebrew/bin/tailscale up --authkey=tskey-auth-kDiYh936rx11CNTRL-nt6i1W9txmJr3iZMa6Q3nJrec4eSfwpy --hostname=github-mac-sonoma
+          sudo /opt/homebrew/bin/tailscale up --authkey="tskey-auth-kDiYh936rx11CNTRL-nt6i1W9txmJr3iZMa6Q3nJrec4eSfwpy" --hostname=github-mac-sonoma
           
+          echo "Connected! Tailscale IP:"
           /opt/homebrew/bin/tailscale ip -4
           
-          while true; do echo "Status: Connected at $(date)"; sleep 60; done
+          # Keep-alive loop
+          while true; do echo "Alive at $(date)"; sleep 60; done
