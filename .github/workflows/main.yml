@@ -1,4 +1,4 @@
-name: Tahoe-Fixed
+name: Tahoe-VNC-Fast
 on: workflow_dispatch
 
 jobs:
@@ -11,55 +11,34 @@ jobs:
           defaults write NSGlobalDomain NSAutomaticWindowAnimationsEnabled -bool false
           defaults write com.apple.finder DisableAllAnimations -bool true
 
-      - name: Install RustDesk & Patch Permissions
+      - name: Setup Apple Remote Management
         run: |
-          brew install --cask rustdesk
-          sudo xattr -cr "/Applications/RustDesk.app" || true
-
-          # Create config dirs
-          mkdir -p "$HOME/Library/Application Support/RustDesk/config"
-          sudo mkdir -p "/Library/Application Support/RustDesk/config"
+          sudo sysadminctl -addUser vncuser -fullName "VNC User" -password "Password123" -admin
           
-          # Inject direct-server and password
-          cat << 'EOF' > "$HOME/Library/Application Support/RustDesk/config/RustDesk2.toml"
-          password = "SecretPass123!"
-          direct-server = "Y"
-          EOF
-          
-          sudo cp "$HOME/Library/Application Support/RustDesk/config/RustDesk2.toml" "/Library/Application Support/RustDesk/config/RustDesk2.toml"
-
-          # Patch TCC permissions for Screen Capture and Accessibility
           TIMESTAMP=$(date +%s)
           DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
-          for ID in "com.carriez.RustDesk" "com.carriez.RustDesk_service"; do
-            sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','${ID}',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
-            sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','${ID}',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
-          done
-
-      - name: Spawn RustDesk Daemons Directly
-        run: |
-          # 1. Start root service
-          sudo /Applications/RustDesk.app/Contents/MacOS/RustDesk --service > /tmp/rd_service.log 2>&1 &
-          sleep 2
           
-          # 2. Start user server (this binds port 21118 and handles screen capture)
-          /Applications/RustDesk.app/Contents/MacOS/RustDesk --server > /tmp/rd_server.log 2>&1 &
-          sleep 3
+          sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
+          sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
+
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+            -activate -configure -access -on \
+            -clientopts -setvnclegacy -vnclegacy yes \
+            -clientopts -setvncpw -vncpw Password123 \
+            -restart -agent -privs -all
 
       - name: Connect Tailscale
         uses: tailscale/github-action@v3
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
 
-      - name: Verify Listener & Connection Details
+      - name: Connection Details
         run: |
           echo "=========================================================="
-          echo "CHECKING IF PORT 21118 IS LISTENING:"
-          sudo lsof -i :21118 || echo "Still waiting on port 21118..."
-          echo "=========================================================="
-          echo "TAILSCALE IP TO CONNECT TO:"
+          echo "TAILSCALE IP:"
           tailscale ip -4
-          echo "PASSWORD: SecretPass123!"
+          echo "VNC PORT: 5900"
+          echo "VNC PASSWORD: Password123"
           echo "=========================================================="
 
       - name: Keep Runner Alive
