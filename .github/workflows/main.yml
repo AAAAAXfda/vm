@@ -1,4 +1,4 @@
-name: Tahoe-Fixed
+name: cereal
 on: workflow_dispatch
 
 jobs:
