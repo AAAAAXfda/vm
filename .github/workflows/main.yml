@@ -1,46 +1,56 @@
-name: macOS RustDesk
+name: Tahoe-Fixed
 on: workflow_dispatch
 
 jobs:
   run-mac:
     runs-on: macos-latest
     steps:
-      - name: Tweak macOS Graphics & Res
+      - name: Kill UI Bloat & Drop Resolution
         run: |
-          # Drop resolution to 720p or 1080p so the encoder doesn't choke on a 4K virtual buffer
-          brew install displayplacer
-          displayplacer "id:$(displayplacer list | grep -m1 'Persistent screen id' | cut -d: -f2 | xargs) res:1280x720 color_depth:8" || true
-          
-          # Kill animation overhead
+          # Kill eye candy so software rendering doesn't eat the CPU
           defaults write com.apple.universalaccess reduceTransparency -bool true
           defaults write NSGlobalDomain NSAutomaticWindowAnimationsEnabled -bool false
+          defaults write com.apple.finder DisableAllAnimations -bool true
+          
+          # Force resolution down to 1280x720
+          brew install displayplacer
+          SCREEN_ID=$(displayplacer list | grep -m1 'Persistent screen id' | cut -d: -f2 | xargs)
+          displayplacer "id:${SCREEN_ID} res:1280x720 color_depth:8" || true
 
-      - name: Install RustDesk & Patch TCC
+      - name: Install & Configure RustDesk
         run: |
           brew install --cask rustdesk
           
           TIMESTAMP=$(date +%s)
           DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
           
-          # Grant RustDesk Screen Capture and Accessibility rights directly in TCC
+          # Patch TCC permissions for RustDesk
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.carriez.RustDesk',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.carriez.RustDesk',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
 
-      - name: Start RustDesk Service
-        run: |
-          # Set a static permanent password
-          sudo /Applications/RustDesk.app/Contents/MacOS/RustDesk --password "Password123!"
-          
-          # Launch service in background
-          sudo /Applications/RustDesk.app/Contents/MacOS/RustDesk --service &
-          sleep 3
-          
-          # Grab the 9-digit RustDesk ID
-          echo "=========================================="
-          echo "YOUR RUSTDESK ID IS:"
-          /Applications/RustDesk.app/Contents/MacOS/RustDesk --get-id
-          echo "=========================================="
+          # Set permanent password
+          sudo /Applications/RustDesk.app/Contents/MacOS/RustDesk --password "SecretPass123!"
 
-      - name: Keep Alive
+          # Enable Direct IP connection
+          defaults write com.carriez.RustDesk direct-server -string "Y"
+
+          # Launch RustDesk in the active GUI session
+          open -a "/Applications/RustDesk.app"
+          sleep 5
+
+      - name: Connect Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
+      - name: Display Connection Info
         run: |
-          while true; do echo "Running at $(date)"; sleep 60; done
+          echo "=========================================================="
+          echo "TAILSCALE IP:"
+          tailscale ip -4
+          echo "RUSTDESK PASSWORD: SecretPass123!"
+          echo "=========================================================="
+
+      - name: Keep Runner Alive
+        run: |
+          while true; do echo "Keep-alive at $(date)"; sleep 60; done
