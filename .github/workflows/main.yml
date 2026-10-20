@@ -11,47 +11,51 @@ jobs:
           defaults write NSGlobalDomain NSAutomaticWindowAnimationsEnabled -bool false
           defaults write com.apple.finder DisableAllAnimations -bool true
 
-      - name: Install RustDesk & Patch TCC
+      - name: Install RustDesk & Patch Services
         run: |
           brew install --cask rustdesk
-          
-          TIMESTAMP=$(date +%s)
-          DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
-          
-          # Force TCC permissions for Screen Capture and Accessibility
-          sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.carriez.RustDesk',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
-          sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.carriez.RustDesk',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
-
-      - name: Configure RustDesk & Launch
-        run: |
-          # Strip Apple quarantine flags so Gatekeeper doesn't stall the launch
           sudo xattr -cr "/Applications/RustDesk.app" || true
 
-          # Create config dirs
+          # Create config dirs before installing service
           mkdir -p "$HOME/Library/Application Support/RustDesk/config"
           sudo mkdir -p "/Library/Application Support/RustDesk/config"
           
-          # Inject direct IP and permanent password
+          # Notice the HYPHEN: direct-server = "Y"
           cat << 'EOF' > "$HOME/Library/Application Support/RustDesk/config/RustDesk2.toml"
           password = "SecretPass123!"
-          direct_server = "Y"
+          direct-server = "Y"
           EOF
           
           sudo cp "$HOME/Library/Application Support/RustDesk/config/RustDesk2.toml" "/Library/Application Support/RustDesk/config/RustDesk2.toml"
+
+          # Actually install the system daemons into launchd
+          sudo /Applications/RustDesk.app/Contents/MacOS/RustDesk --install-service || true
+
+          # Grant TCC permissions to both the GUI app and the background service
+          TIMESTAMP=$(date +%s)
+          DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
           
-          # Launch in background without blocking
+          for ID in "com.carriez.RustDesk" "com.carriez.RustDesk_service"; do
+            sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','${ID}',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
+            sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','${ID}',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
+          done
+
+          # Start services
+          sudo launchctl load -w /Library/LaunchDaemons/com.carriez.RustDesk_service.plist 2>/dev/null || true
+          launchctl load -w /Library/LaunchAgents/com.carriez.RustDesk_server.plist 2>/dev/null || true
           open -g -a "/Applications/RustDesk.app"
-          sleep 3
-          
-          echo "RustDesk initialized."
+          sleep 5
 
       - name: Connect Tailscale
         uses: tailscale/github-action@v3
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
 
-      - name: Connection Details
+      - name: Verify Listener & Connection Details
         run: |
+          echo "=========================================================="
+          echo "CHECKING IF PORT 21118 IS LISTENING:"
+          sudo lsof -i :21118 || echo "WARNING: Port 21118 not open yet"
           echo "=========================================================="
           echo "TAILSCALE IP TO CONNECT TO:"
           tailscale ip -4
