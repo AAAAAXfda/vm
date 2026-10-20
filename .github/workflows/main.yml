@@ -1,4 +1,4 @@
-name: cereal
+name: Tahoe-Fixed
 on: workflow_dispatch
 
 jobs:
@@ -18,17 +18,20 @@ jobs:
           TIMESTAMP=$(date +%s)
           DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
           
-          # Force TCC permissions
+          # Force TCC permissions for Screen Capture and Accessibility
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.carriez.RustDesk',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.carriez.RustDesk',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
 
       - name: Configure RustDesk & Launch
         run: |
-          # Pre-create config directories so the socket and config load properly
+          # Strip Apple quarantine flags so Gatekeeper doesn't stall the launch
+          sudo xattr -cr "/Applications/RustDesk.app" || true
+
+          # Create config dirs
           mkdir -p "$HOME/Library/Application Support/RustDesk/config"
           sudo mkdir -p "/Library/Application Support/RustDesk/config"
           
-          # Write password and direct IP config directly into the TOML file
+          # Inject direct IP and permanent password
           cat << 'EOF' > "$HOME/Library/Application Support/RustDesk/config/RustDesk2.toml"
           password = "SecretPass123!"
           direct_server = "Y"
@@ -36,12 +39,11 @@ jobs:
           
           sudo cp "$HOME/Library/Application Support/RustDesk/config/RustDesk2.toml" "/Library/Application Support/RustDesk/config/RustDesk2.toml"
           
-          # Launch RustDesk inside the GUI session
-          open -a "/Applications/RustDesk.app"
-          sleep 5
+          # Launch in background without blocking
+          open -g -a "/Applications/RustDesk.app"
+          sleep 3
           
-          # Now that the socket exists, verify it's responsive
-          /Applications/RustDesk.app/Contents/MacOS/RustDesk --get-id || true
+          echo "RustDesk initialized."
 
       - name: Connect Tailscale
         uses: tailscale/github-action@v3
@@ -51,9 +53,9 @@ jobs:
       - name: Connection Details
         run: |
           echo "=========================================================="
-          echo "TAILSCALE IP:"
+          echo "TAILSCALE IP TO CONNECT TO:"
           tailscale ip -4
-          echo "RUSTDESK PASSWORD: SecretPass123!"
+          echo "PASSWORD: SecretPass123!"
           echo "=========================================================="
 
       - name: Keep Runner Alive
