@@ -5,45 +5,50 @@ jobs:
   run-mac:
     runs-on: macos-latest
     steps:
-      - name: Kill UI Bloat & Drop Resolution
+      - name: Kill UI Bloat
         run: |
-          # Kill eye candy so software rendering doesn't eat the CPU
           defaults write com.apple.universalaccess reduceTransparency -bool true
           defaults write NSGlobalDomain NSAutomaticWindowAnimationsEnabled -bool false
           defaults write com.apple.finder DisableAllAnimations -bool true
-          
-          # Force resolution down to 1280x720
-          brew install displayplacer
-          SCREEN_ID=$(displayplacer list | grep -m1 'Persistent screen id' | cut -d: -f2 | xargs)
-          displayplacer "id:${SCREEN_ID} res:1280x720 color_depth:8" || true
 
-      - name: Install & Configure RustDesk
+      - name: Install RustDesk & Patch TCC
         run: |
           brew install --cask rustdesk
           
           TIMESTAMP=$(date +%s)
           DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
           
-          # Patch TCC permissions for RustDesk
+          # Force TCC permissions
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.carriez.RustDesk',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.carriez.RustDesk',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
 
-          # Set permanent password
-          sudo /Applications/RustDesk.app/Contents/MacOS/RustDesk --password "SecretPass123!"
-
-          # Enable Direct IP connection
-          defaults write com.carriez.RustDesk direct-server -string "Y"
-
-          # Launch RustDesk in the active GUI session
+      - name: Configure RustDesk & Launch
+        run: |
+          # Pre-create config directories so the socket and config load properly
+          mkdir -p "$HOME/Library/Application Support/RustDesk/config"
+          sudo mkdir -p "/Library/Application Support/RustDesk/config"
+          
+          # Write password and direct IP config directly into the TOML file
+          cat << 'EOF' > "$HOME/Library/Application Support/RustDesk/config/RustDesk2.toml"
+          password = "SecretPass123!"
+          direct_server = "Y"
+          EOF
+          
+          sudo cp "$HOME/Library/Application Support/RustDesk/config/RustDesk2.toml" "/Library/Application Support/RustDesk/config/RustDesk2.toml"
+          
+          # Launch RustDesk inside the GUI session
           open -a "/Applications/RustDesk.app"
           sleep 5
+          
+          # Now that the socket exists, verify it's responsive
+          /Applications/RustDesk.app/Contents/MacOS/RustDesk --get-id || true
 
       - name: Connect Tailscale
         uses: tailscale/github-action@v3
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
 
-      - name: Display Connection Info
+      - name: Connection Details
         run: |
           echo "=========================================================="
           echo "TAILSCALE IP:"
@@ -53,4 +58,4 @@ jobs:
 
       - name: Keep Runner Alive
         run: |
-          while true; do echo "Keep-alive at $(date)"; sleep 60; done
+          while true; do echo "Keep-alive: $(date)"; sleep 60; done
