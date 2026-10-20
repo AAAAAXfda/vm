@@ -1,4 +1,4 @@
-name: Tahoe-VNC-Fast
+name: Tahoe-AnyDesk
 on: workflow_dispatch
 
 jobs:
@@ -11,34 +11,40 @@ jobs:
           defaults write NSGlobalDomain NSAutomaticWindowAnimationsEnabled -bool false
           defaults write com.apple.finder DisableAllAnimations -bool true
 
-      - name: Setup Apple Remote Management
+      - name: Download & Install AnyDesk PKG
         run: |
-          sudo sysadminctl -addUser vncuser -fullName "VNC User" -password "Password123" -admin
-          
+          curl -fsSL -o AnyDesk.pkg https://download.anydesk.com/macos/AnyDesk.pkg
+          sudo installer -pkg AnyDesk.pkg -target /
+
+      - name: Patch TCC Permissions for AnyDesk
+        run: |
           TIMESTAMP=$(date +%s)
           DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
           
-          sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
-          sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
+          # Inject Screen Capture and Accessibility rights directly into TCC
+          sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.philandro.anydesk',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
+          sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.philandro.anydesk',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
 
-          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
-            -activate -configure -access -on \
-            -clientopts -setvnclegacy -vnclegacy yes \
-            -clientopts -setvncpw -vncpw Password123 \
-            -restart -agent -privs -all
-
-      - name: Connect Tailscale
-        uses: tailscale/github-action@v3
-        with:
-          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
-
-      - name: Connection Details
+      - name: Configure AnyDesk & Set Password
         run: |
+          # Strip quarantine
+          sudo xattr -cr /Applications/AnyDesk.app || true
+
+          # Launch AnyDesk to initialize the service
+          open -g /Applications/AnyDesk.app
+          sleep 5
+
+          # Set unattended access password (at least 8 chars)
+          echo "SecretPass123!" | sudo /Applications/AnyDesk.app/Contents/MacOS/AnyDesk --set-password
+
+      - name: Get AnyDesk ID
+        run: |
+          sleep 2
+          ANYDESK_ID=$(/Applications/AnyDesk.app/Contents/MacOS/AnyDesk --get-id)
+          
           echo "=========================================================="
-          echo "TAILSCALE IP:"
-          tailscale ip -4
-          echo "VNC PORT: 5900"
-          echo "VNC PASSWORD: Password123"
+          echo "ANYDESK ID: $ANYDESK_ID"
+          echo "PASSWORD:   SecretPass123!"
           echo "=========================================================="
 
       - name: Keep Runner Alive
