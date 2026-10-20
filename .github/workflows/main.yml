@@ -11,16 +11,16 @@ jobs:
           defaults write NSGlobalDomain NSAutomaticWindowAnimationsEnabled -bool false
           defaults write com.apple.finder DisableAllAnimations -bool true
 
-      - name: Install RustDesk & Patch Services
+      - name: Install RustDesk & Patch Permissions
         run: |
           brew install --cask rustdesk
           sudo xattr -cr "/Applications/RustDesk.app" || true
 
-          # Create config dirs before installing service
+          # Create config dirs
           mkdir -p "$HOME/Library/Application Support/RustDesk/config"
           sudo mkdir -p "/Library/Application Support/RustDesk/config"
           
-          # Notice the HYPHEN: direct-server = "Y"
+          # Inject direct-server and password
           cat << 'EOF' > "$HOME/Library/Application Support/RustDesk/config/RustDesk2.toml"
           password = "SecretPass123!"
           direct-server = "Y"
@@ -28,23 +28,23 @@ jobs:
           
           sudo cp "$HOME/Library/Application Support/RustDesk/config/RustDesk2.toml" "/Library/Application Support/RustDesk/config/RustDesk2.toml"
 
-          # Actually install the system daemons into launchd
-          sudo /Applications/RustDesk.app/Contents/MacOS/RustDesk --install-service || true
-
-          # Grant TCC permissions to both the GUI app and the background service
+          # Patch TCC permissions for Screen Capture and Accessibility
           TIMESTAMP=$(date +%s)
           DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
-          
           for ID in "com.carriez.RustDesk" "com.carriez.RustDesk_service"; do
             sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','${ID}',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
             sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','${ID}',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
           done
 
-          # Start services
-          sudo launchctl load -w /Library/LaunchDaemons/com.carriez.RustDesk_service.plist 2>/dev/null || true
-          launchctl load -w /Library/LaunchAgents/com.carriez.RustDesk_server.plist 2>/dev/null || true
-          open -g -a "/Applications/RustDesk.app"
-          sleep 5
+      - name: Spawn RustDesk Daemons Directly
+        run: |
+          # 1. Start root service
+          sudo /Applications/RustDesk.app/Contents/MacOS/RustDesk --service > /tmp/rd_service.log 2>&1 &
+          sleep 2
+          
+          # 2. Start user server (this binds port 21118 and handles screen capture)
+          /Applications/RustDesk.app/Contents/MacOS/RustDesk --server > /tmp/rd_server.log 2>&1 &
+          sleep 3
 
       - name: Connect Tailscale
         uses: tailscale/github-action@v3
@@ -55,7 +55,7 @@ jobs:
         run: |
           echo "=========================================================="
           echo "CHECKING IF PORT 21118 IS LISTENING:"
-          sudo lsof -i :21118 || echo "WARNING: Port 21118 not open yet"
+          sudo lsof -i :21118 || echo "Still waiting on port 21118..."
           echo "=========================================================="
           echo "TAILSCALE IP TO CONNECT TO:"
           tailscale ip -4
