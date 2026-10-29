@@ -1,50 +1,62 @@
-name: Tahoe-AnyDesk
+name: cereal-box
 on: workflow_dispatch
 
 jobs:
   run-mac:
     runs-on: macos-latest
     steps:
-      - name: Kill UI Bloat
+      - name: Enable & Tune Low-Latency OpenSSH
         run: |
-          defaults write com.apple.universalaccess reduceTransparency -bool true
-          defaults write NSGlobalDomain NSAutomaticWindowAnimationsEnabled -bool false
-          defaults write com.apple.finder DisableAllAnimations -bool true
+          # 1. Turn on Apple's OpenSSH server
+          sudo systemsetup -setremotelogin on
 
-      - name: Download & Install AnyDesk PKG
-        run: |
-          curl -fsSL -o AnyDesk.pkg https://download.anydesk.com/macos/AnyDesk.pkg
-          sudo installer -pkg AnyDesk.pkg -target /
-
-      - name: Patch TCC Permissions for AnyDesk
-        run: |
-          TIMESTAMP=$(date +%s)
-          DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
+          ACTIVE_USER=$(stat -f "%Su" /dev/console)
+          USER_HOME=$(eval echo "~$ACTIVE_USER")
           
-          # Inject Screen Capture and Accessibility rights directly into TCC
-          sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.philandro.anydesk',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
-          sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.philandro.anydesk',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
-
-      - name: Configure AnyDesk & Set Password
-        run: |
-          # Strip quarantine
-          sudo xattr -cr /Applications/AnyDesk.app || true
-
-          # Launch AnyDesk to initialize the service
-          open -g /Applications/AnyDesk.app
-          sleep 5
-
-          # Set unattended access password (at least 8 chars)
-          echo "SecretPass123!" | sudo /Applications/AnyDesk.app/Contents/MacOS/AnyDesk --set-password
-
-      - name: Get AnyDesk ID
-        run: |
-          sleep 2
-          ANYDESK_ID=$(/Applications/AnyDesk.app/Contents/MacOS/AnyDesk --get-id)
+          # 2. Setup .ssh directory safely
+          sudo chmod 755 "$USER_HOME"
+          mkdir -p "$USER_HOME/.ssh"
           
+          # 3. Pull key from secrets (falls back to your public GitHub keys if secret is missing)
+          if [ -n "${{ secrets.SSH_PUBLIC_KEY }}" ]; then
+            echo "${{ secrets.SSH_PUBLIC_KEY }}" > "$USER_HOME/.ssh/authorized_keys"
+          else
+            curl -fsSL "https://github.com/${{ github.actor }}.keys" > "$USER_HOME/.ssh/authorized_keys"
+          fi
+          
+          chmod 700 "$USER_HOME/.ssh"
+          chmod 600 "$USER_HOME/.ssh/authorized_keys"
+          chown -R "$ACTIVE_USER" "$USER_HOME/.ssh"
+
+          # 4. Tune sshd for instant low-latency key-only auth
+          sudo tee -a /etc/ssh/sshd_config << 'EOF'
+          StrictModes no
+          UseDNS no
+          GSSAPIAuthentication no
+          IPQoS lowdelay throughput
+          Compression no
+          PubkeyAuthentication yes
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          ChallengeResponseAuthentication no
+          TCPKeepAlive yes
+          EOF
+
+          # Restart OpenSSH daemon
+          sudo killall -HUP sshd || true
+
+      - name: Connect Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
+      - name: Connection Details
+        run: |
+          ACTIVE_USER=$(stat -f "%Su" /dev/console)
+          TS_IP=$(tailscale ip -4)
           echo "=========================================================="
-          echo "ANYDESK ID: $ANYDESK_ID"
-          echo "PASSWORD:   SecretPass123!"
+          echo "RUN THIS EXACT COMMAND IN WINDOWS CMD OR POWERSHELL:"
+          echo "ssh -o IPQoS=lowdelay -i \"%USERPROFILE%\\.ssh\\id_ed25519\" $ACTIVE_USER@$TS_IP"
           echo "=========================================================="
 
       - name: Keep Runner Alive
