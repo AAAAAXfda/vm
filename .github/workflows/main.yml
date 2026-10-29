@@ -3,7 +3,7 @@ on: workflow_dispatch
 
 jobs:
   run-mac:
-    runs-on: macos-latest
+    runs-on: macos-26-large
     steps:
       - name: Enable & Tune Low-Latency OpenSSH
         run: |
