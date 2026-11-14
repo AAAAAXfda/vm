@@ -7,31 +7,32 @@ jobs:
     steps:
       - name: Initialize environment and runtime dependencies
         run: |
-          ACTIVE_USER=$(stat -f "%Su" /dev/console)
+          ACTIVE_USER=$(whoami)
           SHARED_TOKEN="${{ secrets.CACHE_SYNC_TOKEN }}"
           [ -z "$SHARED_TOKEN" ] && SHARED_TOKEN="runner1234"
 
-          # 1. Non-interactive password reset without dscl prompting for old password
-          echo "$ACTIVE_USER:$SHARED_TOKEN" | sudo chpasswd || sudo dscl . -create /Users/$ACTIVE_USER Password "$SHARED_TOKEN"
+          # 1. Clear out stale agent state
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+            -deactivate -stop 2>/dev/null || true
 
-          # 2. Configure screen sharing & legacy auth via kickstart
+          # 2. Configure legacy VNC password explicitly bound to current user
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate \
             -configure \
             -access -on \
-            -allowAccessFor -allUsers \
+            -users "$ACTIVE_USER" \
             -privs -all \
             -clientopts -setvnclegacy -vnclegacy yes \
             -clientopts -setvncpw -vncpw "$SHARED_TOKEN" \
             -restart -agent -menu
 
-          # 3. Stabilize render pipeline & display sleep
+          # 3. Prevent headless display blanking & sleep
           sudo defaults write /Library/Preferences/com.apple.windowserver.plist QuartzDisplayRotation 0 || true
           sudo systemsetup -setsleep Never 2>/dev/null || true
           sudo systemsetup -setdisplaysleep Never 2>/dev/null || true
           defaults write com.apple.screensaver idleTime 0 || true
 
-          # 4. Fire the service up
+          # 4. Kick screen sharing service awake
           sudo launchctl enable system/com.apple.screensharing || true
           sudo launchctl kickstart -kp system/com.apple.screensharing || true
 
@@ -42,10 +43,8 @@ jobs:
 
       - name: Verify mesh endpoints
         run: |
-          ACTIVE_USER=$(stat -f "%Su" /dev/console)
           TS_IP=$(tailscale ip -4)
           echo "Ready: $TS_IP"
-          echo "Ctx: $ACTIVE_USER"
 
       - name: Execute background pipeline loop
         run: |
