@@ -1,4 +1,4 @@
-name: Xode
+name: Xcode
 on: workflow_dispatch
 
 jobs:
