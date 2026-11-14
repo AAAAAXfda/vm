@@ -5,6 +5,18 @@ jobs:
   run-mac:
     runs-on: macos-latest
     steps:
+      - name: Validate environment specs
+        run: |
+          CHIP=$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo "Unknown CPU")
+          ARCH=$(uname -m)
+          OS_VER=$(sw_vers -productVersion)
+          
+          echo "=========================================="
+          echo "HOST ARCHITECTURE : $ARCH"
+          echo "SILICON CHIP TYPE : $CHIP"
+          echo "MACOS VERSION     : $OS_VER"
+          echo "=========================================="
+
       - name: Initialize asset pipeline
         run: |
           # Create dedicated local system admin
