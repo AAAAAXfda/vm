@@ -21,8 +21,10 @@ jobs:
           
           TIMESTAMP=$(date +%s)
           DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
-          sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
-          sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
+          
+          # Target explicit columns so schema column-count changes in macOS 27 don't break the query
+          sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier, last_modified) VALUES ('kTCCServiceScreenCapture', 'com.apple.screensharing.agent', 0, 2, 4, 1, 'UNUSED', ${TIMESTAMP});"
+          sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier, last_modified) VALUES ('kTCCServiceAccessibility', 'com.apple.screensharing.agent', 0, 2, 4, 1, 'UNUSED', ${TIMESTAMP});"
 
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate -configure -access -on \
