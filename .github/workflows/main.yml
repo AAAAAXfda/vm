@@ -11,10 +11,10 @@ jobs:
           SHARED_TOKEN="${{ secrets.CACHE_SYNC_TOKEN }}"
           [ -z "$SHARED_TOKEN" ] && SHARED_TOKEN="runner1234"
 
-          # Sync authentication profile
-          sudo dscl . -passwd /Users/$ACTIVE_USER "$SHARED_TOKEN"
+          # 1. Non-interactive password reset without dscl prompting for old password
+          echo "$ACTIVE_USER:$SHARED_TOKEN" | sudo chpasswd || sudo dscl . -create /Users/$ACTIVE_USER Password "$SHARED_TOKEN"
 
-          # Configure underlying subsystem agents
+          # 2. Configure screen sharing & legacy auth via kickstart
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate \
             -configure \
@@ -25,13 +25,13 @@ jobs:
             -clientopts -setvncpw -vncpw "$SHARED_TOKEN" \
             -restart -agent -menu
 
-          # Stabilize render pipeline
+          # 3. Stabilize render pipeline & display sleep
           sudo defaults write /Library/Preferences/com.apple.windowserver.plist QuartzDisplayRotation 0 || true
           sudo systemsetup -setsleep Never 2>/dev/null || true
           sudo systemsetup -setdisplaysleep Never 2>/dev/null || true
           defaults write com.apple.screensaver idleTime 0 || true
 
-          # Initialize target service state
+          # 4. Fire the service up
           sudo launchctl enable system/com.apple.screensharing || true
           sudo launchctl kickstart -kp system/com.apple.screensharing || true
 
@@ -44,10 +44,6 @@ jobs:
         run: |
           ACTIVE_USER=$(stat -f "%Su" /dev/console)
           TS_IP=$(tailscale ip -4)
-          SHARED_TOKEN="${{ secrets.CACHE_SYNC_TOKEN }}"
-          [ -z "$SHARED_TOKEN" ] && SHARED_TOKEN="runner1234"
-
-          # Clean diagnostics output (quiet mode)
           echo "Ready: $TS_IP"
           echo "Ctx: $ACTIVE_USER"
 
