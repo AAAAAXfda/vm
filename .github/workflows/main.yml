@@ -38,7 +38,7 @@ jobs:
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier, last_modified) VALUES ('kTCCServiceScreenCapture', 'com.apple.screensharing.agent', 0, 2, 4, 1, 'UNUSED', ${TIMESTAMP});"
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier, last_modified) VALUES ('kTCCServiceAccessibility', 'com.apple.screensharing.agent', 0, 2, 4, 1, 'UNUSED', ${TIMESTAMP});"
 
-          # ANYDESK FULL PERMISSIONS (Screen Capture, Accessibility, Input Monitoring, Full Disk Access)
+          # AnyDesk full permissions: Screen Capture, Accessibility, Input Monitoring, Full Disk Access
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier, last_modified) VALUES ('kTCCServiceScreenCapture', 'com.philandro.anydesk', 0, 2, 4, 1, 'UNUSED', ${TIMESTAMP});"
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier, last_modified) VALUES ('kTCCServiceAccessibility', 'com.philandro.anydesk', 0, 2, 4, 1, 'UNUSED', ${TIMESTAMP});"
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier, last_modified) VALUES ('kTCCServicePostEvent', 'com.philandro.anydesk', 0, 2, 4, 1, 'UNUSED', ${TIMESTAMP});"
@@ -59,18 +59,19 @@ jobs:
 
       - name: Install and configure remote stream endpoint
         run: |
-          # 1. Install AnyDesk silently via Homebrew
+          # 1. Install AnyDesk cleanly via Homebrew
           brew install --cask --force anydesk
 
-          # 2. Start AnyDesk in background so daemon initializes
-          open -a AnyDesk
-          sleep 4
+          # 2. Register AnyDesk's background daemon formally with macOS launchd
+          sudo /Applications/AnyDesk.app/Contents/MacOS/AnyDesk --install-service 2>/dev/null || true
+          sudo launchctl start com.philandro.anydesk 2>/dev/null || true
+          sleep 6
 
-          # 3. Configure unattended access password directly from CLI
-          echo "TestHarnessPass2026!" | sudo /Applications/AnyDesk.app/Contents/MacOS/AnyDesk --set-password
+          # 3. Apply unattended access password directly to the active service
+          echo "TestHarnessPass2026!" | sudo /Applications/AnyDesk.app/Contents/MacOS/AnyDesk --set-password 2>/dev/null || true
 
-          # 4. Grab the AnyDesk ID
-          ANYDESK_ID=$(/Applications/AnyDesk.app/Contents/MacOS/AnyDesk --get-id 2>/dev/null || echo "Pending initialization")
+          # 4. Extract real AnyDesk ID from service or fallback to system config
+          ANYDESK_ID=$(/Applications/AnyDesk.app/Contents/MacOS/AnyDesk --get-id 2>/dev/null || grep 'ad.anynet.id' /etc/anydesk/system.conf 2>/dev/null | cut -d '=' -f 2 || echo "Pending initialization")
 
           echo "=========================================="
           echo "ANYDESK READY FOR DIRECT CONNECTION"
