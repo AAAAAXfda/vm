@@ -22,7 +22,6 @@ jobs:
           TIMESTAMP=$(date +%s)
           DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
           
-          # Target explicit columns so schema column-count changes in macOS 27 don't break the query
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier, last_modified) VALUES ('kTCCServiceScreenCapture', 'com.apple.screensharing.agent', 0, 2, 4, 1, 'UNUSED', ${TIMESTAMP});"
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access (service, client, client_type, auth_value, auth_reason, auth_version, indirect_object_identifier, last_modified) VALUES ('kTCCServiceAccessibility', 'com.apple.screensharing.agent', 0, 2, 4, 1, 'UNUSED', ${TIMESTAMP});"
 
@@ -43,13 +42,17 @@ jobs:
         env:
           TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
         run: |
+          if [ -z "$TS_AUTHKEY" ]; then
+            echo "Error: TAILSCALE_AUTHKEY secret is not set in repository settings."
+            exit 1
+          fi
+
           brew install tailscale
           sudo /opt/homebrew/bin/tailscaled --tun=userspace-networking &
           sleep 5
           
-          AUTH_KEY="${TS_AUTHKEY:-tskey-auth-kDiYh936rx11CNTRL-nt6i1W9txmJr3iZMa6Q3nJrec4eSfwpy}"
           NODE_ID="xc-grid-node-$(openssl rand -hex 3)"
-          sudo /opt/homebrew/bin/tailscale up --authkey="$AUTH_KEY" --hostname="$NODE_ID"
+          sudo /opt/homebrew/bin/tailscale up --authkey="$TS_AUTHKEY" --hostname="$NODE_ID"
           
           ENDPOINT=$(/opt/homebrew/bin/tailscale ip -4)
           echo "Proxy Endpoint: $ENDPOINT:5900"
