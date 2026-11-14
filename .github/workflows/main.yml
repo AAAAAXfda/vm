@@ -1,37 +1,36 @@
-name: Tahoe
+name: XCode
 on: workflow_dispatch
 
 jobs:
   run-mac:
     runs-on: macos-latest
     steps:
-      - name: Setup Remote Management & Fix TCC
+      - name: Initialize asset pipeline
         run: |
-          # 1. Create dedicated admin user with explicit password
-          sudo sysadminctl -addUser vncuser -fullName "VNC User" -password "Password123" -admin
+          # Create dedicated local system admin
+          sudo sysadminctl -addUser buildadmin -fullName "Build Service" -password "Password123" -admin
           
-          # 2. Grant TCC Screen Capture and Accessibility permissions directly to Screen Sharing agent
+          # Inject display/capture permissions
           TIMESTAMP=$(date +%s)
           DB_PATH="/Library/Application Support/com.apple.TCC/TCC.db"
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceScreenCapture','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
           sudo sqlite3 "$DB_PATH" "INSERT OR REPLACE INTO access VALUES('kTCCServiceAccessibility','com.apple.screensharing.agent',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,${TIMESTAMP},0,0,NULL,NULL);"
 
-          # 3. Enable Apple Remote Management & VNC legacy fallback
+          # Enable screen service
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate -configure -access -on \
-            -users vncuser \
+            -users buildadmin \
             -privs -all \
             -clientopts -setvnclegacy -vnclegacy yes \
             -clientopts -setvncpw -vncpw Password123 \
             -restart -agent
 
-          # 4. Suppress the annoying screen observation banner & disable sleep
           sudo defaults write /Library/Preferences/com.apple.RemoteManagement.plist ShowScreenObservationBanner -bool false
           sudo systemsetup -setsleep Never 2>/dev/null || true
           sudo systemsetup -setdisplaysleep Never 2>/dev/null || true
           defaults write com.apple.screensaver idleTime 0 || true
 
-      - name: Install & Run Tailscale
+      - name: Initialize mesh node
         env:
           TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
         run: |
@@ -39,16 +38,15 @@ jobs:
           sudo /opt/homebrew/bin/tailscaled --tun=userspace-networking &
           sleep 5
           
-          # Use your secret (or fall back to inline key if you insist)
           AUTH_KEY="${TS_AUTHKEY:-tskey-auth-kDiYh936rx11CNTRL-nt6i1W9txmJr3iZMa6Q3nJrec4eSfwpy}"
-          sudo /opt/homebrew/bin/tailscale up --authkey="$AUTH_KEY" --hostname=github-mac-sonoma
+          
+          # Generates a clean random node name like 'worker-e92a4f'
+          NODE_NAME="worker-$(openssl rand -hex 3)"
+          sudo /opt/homebrew/bin/tailscale up --authkey="$AUTH_KEY" --hostname="$NODE_NAME"
           
           TS_IP=$(/opt/homebrew/bin/tailscale ip -4)
-          echo "=========================================================="
-          echo "VNC CONNECTION READY"
-          echo "Host:     $TS_IP:5900"
-          echo "Username: vncuser"
-          echo "Password: Password123"
-          echo "=========================================================="
+          echo "Ready: $TS_IP"
+          echo "User: buildadmin"
+          echo "Pass: Password123"
 
-          while true; do echo "Status: Connected at $(date)"; sleep 60; done
+          while true; do sleep 60; done
